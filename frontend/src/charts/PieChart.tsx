@@ -17,7 +17,7 @@ export default function PieChart({ data, height = 280 }: Props) {
     const arc = d3.arc<any>().innerRadius(R * 0.52).outerRadius(R)
     const arcHover = d3.arc<any>().innerRadius(R * 0.52).outerRadius(R + 6)
 
-    const slices = svg.selectAll("path").data(pie(data)).join("path")
+    svg.selectAll("path").data(pie(data)).join("path")
       .attr("d", arc).attr("fill", d => colour(d.data.key))
       .attr("stroke", C.card).attr("stroke-width", 2)
       .on("mouseover", function () { d3.select(this).attr("d", arcHover) })

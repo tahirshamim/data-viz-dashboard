@@ -9,15 +9,16 @@ export function useClimateData() {
   return useQuery({
     queryKey: ["climate", country, startDate, endDate, limit],
     queryFn: async () => {
-      const params: Record<string, string | number> = { limit }
-      if (country)   params.country    = country
-      if (startDate) params.start_date = startDate
-      if (endDate)   params.end_date   = endDate
+      const p = new URLSearchParams()
+      p.set("limit", String(limit))
+      if (country)   p.set("country", country)
+      if (startDate) p.set("start_date", startDate)
+      if (endDate)   p.set("end_date", endDate)
 
-      const res = await api.get("/api/climate/readings", { params })
-      return res.data as ClimateReading[]
+      const res = await fetch(`${import.meta.env.VITE_API_URL || "http://127.0.0.1:8000"}/api/climate/readings?${p}`)
+      return res.json() as Promise<ClimateReading[]>
     },
-    staleTime: 5 * 60 * 1000,  // don't re-fetch for 5 minutes
+    staleTime: 5 * 60 * 1000,
     retry: 2,
   })
 }
