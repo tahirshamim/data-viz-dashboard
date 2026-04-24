@@ -8,7 +8,7 @@ import ScatterPlot     from "../charts/ScatterPlot"
 import { C }           from "../theme"
 import * as d3 from "d3"
 
-const get = (url: string) => fetch("http://127.0.0.1:8000" + url).then(r => r.json())
+import { get } from "../lib/api"
 
 export default function ClimatePage() {
   const [data,    setData]    = useState<any[]>([])

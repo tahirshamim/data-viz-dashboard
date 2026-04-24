@@ -1,19 +1,10 @@
-import axios from "axios"
+export const API_BASE = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000"
 
-// In development this hits localhost:8000
-// In production you'd replace this with your deployed URL
-const api = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || "http://localhost:8000",
-  timeout: 15000,
-})
+export const get = (url: string) =>
+  fetch(API_BASE + url)
+    .then(r => {
+      if (!r.ok) throw new Error(`HTTP ${r.status}`)
+      return r.json()
+    })
 
-// Log errors in one place instead of in every component
-api.interceptors.response.use(
-  (response) => response,
-  (error) => {
-    console.error("API error:", error.response?.data || error.message)
-    return Promise.reject(error)
-  }
-)
-
-export default api
+export default { get }

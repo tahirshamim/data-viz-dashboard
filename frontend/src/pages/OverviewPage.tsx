@@ -8,7 +8,7 @@ import { C }      from "../theme"
 import { useNavigate } from "react-router-dom"
 import * as d3 from "d3"
 
-const get = (url: string) => fetch("http://127.0.0.1:8000" + url).then(r => r.json())
+import { get } from "../lib/api"
 
 export default function OverviewPage() {
   const [climate, setClimate]   = useState<any>(null)

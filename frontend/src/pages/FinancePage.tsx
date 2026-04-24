@@ -7,7 +7,7 @@ import LineChart  from "../charts/LineChart"
 import BarChart   from "../charts/BarChart"
 import { C, CHART_COLORS } from "../theme"
 
-const get = (url: string) => fetch("http://127.0.0.1:8000" + url).then(r => r.json())
+import { get } from "../lib/api"
 
 function CandlestickChart({ data }: { data: any[] }) {
   const ref = useRef<SVGSVGElement>(null)
