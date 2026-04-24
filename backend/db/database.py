@@ -5,20 +5,23 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-DATABASE_URL = os.getenv(
-    "DATABASE_URL",
-    "sqlite+aiosqlite:///./vizdb.db"
-)
+DATABASE_URL = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./vizdb.db")
 
-# fix URL scheme for asyncpg
+# strip query params before modifying scheme
+# asyncpg does not accept ?sslmode=require in the URL
+if "?" in DATABASE_URL:
+    DATABASE_URL = DATABASE_URL.split("?")[0]
+
+# fix scheme for asyncpg driver
 if DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql+asyncpg://", 1)
 elif DATABASE_URL.startswith("postgresql://") and "+asyncpg" not in DATABASE_URL:
     DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://", 1)
 
-# SSL required for Supabase
+# set SSL via connect_args instead of URL param
 connect_args = {}
-if "supabase.co" in DATABASE_URL or "neon.tech" in DATABASE_URL:
+raw_url = os.getenv("DATABASE_URL", "")
+if "neon.tech" in raw_url:
     connect_args = {"ssl": "require"}
 elif DATABASE_URL.startswith("sqlite"):
     connect_args = {"check_same_thread": False}
@@ -29,7 +32,8 @@ engine = create_async_engine(
     connect_args=connect_args,
     pool_size=5,
     max_overflow=10,
-    pool_pre_ping=True
+    pool_pre_ping=True,
+    pool_recycle=300
 )
 
 AsyncSessionLocal = async_sessionmaker(engine, expire_on_commit=False)
