@@ -21,7 +21,7 @@ export default function OverviewPage() {
     get("/api/climate/summary").then(setClimate).catch(console.error)
     get("/api/covid/summary").then(setCovid).catch(console.error)
     get("/api/finance/summary").then(setFinance).catch(console.error)
-    get("/api/climate/readings?limit=1000").then(setRecentC).catch(console.error)
+    get("/api/climate/readings?limit=200").then(setRecentC).catch(console.error)
   }, [])
 
   const byCountry = d3.rollup(recentC, v => +(d3.mean(v, (d: any) => d.temp_c) ?? 0).toFixed(1), (d: any) => d.country)
