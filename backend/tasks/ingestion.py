@@ -1,9 +1,14 @@
 import asyncio
 import httpx
+import logging
 from datetime import datetime
 from tasks.celery_app import celery_app
 from db.database import AsyncSessionLocal
 from models.data_model import ClimateReading, StockPrice
+
+# this will show in Render logs
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 CITIES = [
     {"name": "London",      "country": "UK",        "lat": 51.51,  "lon": -0.13},
@@ -17,7 +22,7 @@ CITIES = [
     {"name": "Beijing",     "country": "China",      "lat": 39.91,  "lon": 116.39},
     {"name": "Moscow",      "country": "Russia",     "lat": 55.75,  "lon": 37.62},
     {"name": "Mumbai",      "country": "India",      "lat": 19.08,  "lon": 72.88},
-    {"name": "São Paulo",   "country": "Brazil",     "lat": -23.55, "lon": -46.63},
+    {"name": "Sao Paulo",   "country": "Brazil",     "lat": -23.55, "lon": -46.63},
     {"name": "Cairo",       "country": "Egypt",      "lat": 30.06,  "lon": 31.25},
     {"name": "Istanbul",    "country": "Turkey",     "lat": 41.01,  "lon": 28.95},
     {"name": "Berlin",      "country": "Germany",    "lat": 52.52,  "lon": 13.40},
@@ -35,8 +40,7 @@ STOCKS = [
 ]
 
 
-async def fetch_one_city(client: httpx.AsyncClient, city: dict) -> ClimateReading | None:
-    """Fetch weather for a single city — runs in parallel with others."""
+async def fetch_one_city(client: httpx.AsyncClient, city: dict):
     try:
         url = (
             "https://api.open-meteo.com/v1/forecast"
@@ -47,19 +51,22 @@ async def fetch_one_city(client: httpx.AsyncClient, city: dict) -> ClimateReadin
             "&timezone=UTC"
             "&forecast_days=1"
         )
-        resp = await client.get(url, timeout=10)
+        resp = await client.get(url, timeout=15)
         if resp.status_code != 200:
+            logger.error(f"  {city['name']}: HTTP {resp.status_code}")
             return None
 
         data      = resp.json()
         daily     = data.get("daily", {})
-        temp_mean = daily.get("temperature_2m_mean",      [None])[0]
-        temp_max  = daily.get("temperature_2m_max",       [None])[0]
-        temp_min  = daily.get("temperature_2m_min",       [None])[0]
-        humidity  = daily.get("relative_humidity_2m_mean",[None])[0]
+        temp_mean = daily.get("temperature_2m_mean",       [None])[0]
+        temp_max  = daily.get("temperature_2m_max",        [None])[0]
+        temp_min  = daily.get("temperature_2m_min",        [None])[0]
+        humidity  = daily.get("relative_humidity_2m_mean", [None])[0]
 
         if temp_mean is None and temp_max and temp_min:
             temp_mean = round((temp_max + temp_min) / 2, 1)
+
+        logger.info(f"  {city['name']}: {temp_mean}°C  {humidity}% humidity")
 
         return ClimateReading(
             station   = city["name"],
@@ -74,7 +81,7 @@ async def fetch_one_city(client: httpx.AsyncClient, city: dict) -> ClimateReadin
             ),
         )
     except Exception as e:
-        print(f"  Error fetching {city['name']}: {e}")
+        logger.error(f"  {city['name']} error: {e}")
         return None
 
 
@@ -87,46 +94,51 @@ def fetch_climate_data(self):
 
 
 async def _fetch_climate():
-    """Fetch all cities in parallel — much faster than one by one."""
-    async with httpx.AsyncClient() as client:
-        # fire all requests at the same time
-        tasks    = [fetch_one_city(client, city) for city in CITIES]
-        results  = await asyncio.gather(*tasks)
+    logger.info("=== Climate fetch started ===")
+    try:
+        async with httpx.AsyncClient() as client:
+            tasks   = [fetch_one_city(client, city) for city in CITIES]
+            results = await asyncio.gather(*tasks, return_exceptions=True)
 
-    # filter out failed requests
-    readings = [r for r in results if r is not None]
+        readings = [r for r in results if r is not None and not isinstance(r, Exception)]
+        logger.info(f"Fetched {len(readings)} cities successfully")
 
-    async with AsyncSessionLocal() as db:
-        db.add_all(readings)
-        await db.commit()
+        async with AsyncSessionLocal() as db:
+            db.add_all(readings)
+            await db.commit()
+            logger.info(f"=== Saved {len(readings)} climate readings to database ===")
 
-    print(f"Climate ingestion done — {len(readings)}/{len(CITIES)} cities")
+    except Exception as e:
+        logger.error(f"=== Climate fetch FAILED: {e} ===")
+        raise
 
 
-async def fetch_one_stock(symbol: str) -> StockPrice | None:
-    """Fetch latest price for one stock symbol."""
+async def fetch_one_stock(symbol: str):
     try:
         import yfinance as yf
         ticker = yf.Ticker(symbol)
         hist   = ticker.history(period="2d", interval="1d")
 
         if hist.empty:
+            logger.warning(f"  {symbol}: no data returned")
             return None
 
         latest = hist.iloc[-1]
         ts     = hist.index[-1].to_pydatetime()
+        close  = round(float(latest["Close"]), 2)
+        logger.info(f"  {symbol}: ${close}")
 
         return StockPrice(
             symbol    = symbol,
             open      = round(float(latest["Open"]),  2),
             high      = round(float(latest["High"]),  2),
             low       = round(float(latest["Low"]),   2),
-            close     = round(float(latest["Close"]), 2),
+            close     = close,
             volume    = int(latest["Volume"]),
             timestamp = ts,
         )
     except Exception as e:
-        print(f"  Error fetching {symbol}: {e}")
+        logger.error(f"  {symbol} error: {e}")
         return None
 
 
@@ -139,13 +151,17 @@ def fetch_stock_data(self):
 
 
 async def _fetch_stocks():
-    """Fetch all stocks in parallel."""
-    tasks   = [fetch_one_stock(symbol) for symbol in STOCKS]
-    results = await asyncio.gather(*tasks)
-    records = [r for r in results if r is not None]
+    logger.info("=== Stock fetch started ===")
+    try:
+        tasks   = [fetch_one_stock(s) for s in STOCKS]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        records = [r for r in results if r is not None and not isinstance(r, Exception)]
 
-    async with AsyncSessionLocal() as db:
-        db.add_all(records)
-        await db.commit()
+        async with AsyncSessionLocal() as db:
+            db.add_all(records)
+            await db.commit()
+            logger.info(f"=== Saved {len(records)} stock records to database ===")
 
-    print(f"Stock ingestion done — {len(records)}/{len(STOCKS)} symbols")
+    except Exception as e:
+        logger.error(f"=== Stock fetch FAILED: {e} ===")
+        raise
