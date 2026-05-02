@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from db.database import get_db
@@ -106,15 +106,11 @@ async def get_climate_summary(db: AsyncSession = Depends(get_db)):
 
 
 @router.get("/trigger-fetch")
-async def trigger_fetch_get():
+async def trigger_climate_fetch(background_tasks: BackgroundTasks):
     """
-    Called by cron job service every hour.
-    No Celery or Redis needed.
+    Returns immediately — runs fetch in background.
+    Cron job won't timeout.
     """
-    try:
-        from tasks.ingestion import _fetch_climate
-        import asyncio
-        await _fetch_climate()
-        return {"status": "ok", "message": "Climate data updated"}
-    except Exception as e:
-        return {"status": "error", "message": str(e)}
+    from tasks.ingestion import _fetch_climate
+    background_tasks.add_task(_fetch_climate)
+    return {"status": "ok", "message": "Climate fetch started in background"}

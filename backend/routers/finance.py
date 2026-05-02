@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_
 from db.database import get_db
@@ -68,12 +68,8 @@ async def get_finance_summary(db: AsyncSession = Depends(get_db)):
 
     
 @router.get("/trigger-fetch")
-async def trigger_fetch_get():
-    """Called by cron job every day at 8pm UTC."""
-    try:
-        from tasks.ingestion import _fetch_stocks
-        import asyncio
-        await _fetch_stocks()
-        return {"status": "ok", "message": "Stock data updated"}
-    except Exception as e:
-        return {"status": "error", "message": str(e)}
+async def trigger_stock_fetch(background_tasks: BackgroundTasks):
+    """Returns immediately — runs fetch in background."""
+    from tasks.ingestion import _fetch_stocks
+    background_tasks.add_task(_fetch_stocks)
+    return {"status": "ok", "message": "Stock fetch started in background"}
