@@ -102,3 +102,19 @@ async def get_climate_summary(db: AsyncSession = Depends(get_db)):
 
     except Exception as e:
         return {"error": str(e), "type": type(e).__name__}
+    
+
+
+@router.get("/trigger-fetch")
+async def trigger_fetch_get():
+    """
+    Called by cron job service every hour.
+    No Celery or Redis needed.
+    """
+    try:
+        from tasks.ingestion import _fetch_climate
+        import asyncio
+        await _fetch_climate()
+        return {"status": "ok", "message": "Climate data updated"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}

@@ -64,3 +64,16 @@ async def get_finance_summary(db: AsyncSession = Depends(get_db)):
         "avg_close":     round(row.avg_close or 0, 2),
         "total_volume":  row.total_volume  or 0,
     }
+
+
+    
+@router.get("/trigger-fetch")
+async def trigger_fetch_get():
+    """Called by cron job every day at 8pm UTC."""
+    try:
+        from tasks.ingestion import _fetch_stocks
+        import asyncio
+        await _fetch_stocks()
+        return {"status": "ok", "message": "Stock data updated"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}

@@ -11,17 +11,14 @@ celery_app = Celery(
     include=["tasks.ingestion"]
 )
 
-# Schedule ingestion jobs
 celery_app.conf.beat_schedule = {
-    # Fetch climate data every hour
     "fetch-climate-hourly": {
         "task":     "tasks.ingestion.fetch_climate_data",
-        "schedule": crontab(minute=0),  # top of every hour
+        "schedule": crontab(minute=0),
     },
-    # Fetch COVID data once a day at midnight
-    "fetch-covid-daily": {
-        "task":     "tasks.ingestion.fetch_covid_data",
-        "schedule": crontab(hour=0, minute=0),
+    "fetch-stocks-daily": {
+        "task":     "tasks.ingestion.fetch_stock_data",
+        "schedule": crontab(hour=20, minute=0),
     },
 }
 
