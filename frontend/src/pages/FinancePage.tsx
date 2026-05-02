@@ -3,10 +3,10 @@ import * as d3 from "d3"
 import PageShell  from "../components/PageShell"
 import StatCard   from "../components/StatCard"
 import ChartCard  from "../components/ChartCard"
+import DataFilter from "../components/DataFilter"
 import LineChart  from "../charts/LineChart"
 import BarChart   from "../charts/BarChart"
 import { C, CHART_COLORS } from "../theme"
-
 import { get } from "../lib/api"
 
 function CandlestickChart({ data }: { data: any[] }) {
@@ -21,7 +21,8 @@ function CandlestickChart({ data }: { data: any[] }) {
     const svg = d3.select(ref.current).append("g").attr("transform", `translate(${m.left},${m.top})`)
     const x = d3.scaleBand().domain(recent.map((_, i) => String(i))).range([0, W]).padding(0.2)
     const y = d3.scaleLinear().domain([d3.min(recent, d => d.low)! * 0.99, d3.max(recent, d => d.high)! * 1.01]).range([H, 0])
-    svg.append("g").attr("transform", `translate(0,${H})`).call(d3.axisBottom(x).tickValues(x.domain().filter((_, i) => i % 10 === 0)).tickFormat(i => d3.timeFormat("%b %d")(new Date(recent[+i].timestamp))))
+    svg.append("g").attr("transform", `translate(0,${H})`)
+      .call(d3.axisBottom(x).tickValues(x.domain().filter((_, i) => i % 10 === 0)).tickFormat(i => d3.timeFormat("%b %d")(new Date(recent[+i].timestamp))))
       .call(g => { g.select(".domain").style("stroke", C.border); g.selectAll("text").style("fill", C.muted).style("font-size", "11px") })
     svg.append("g").call(d3.axisLeft(y).ticks(6).tickSize(-W))
       .call(g => { g.select(".domain").remove(); g.selectAll("line").style("stroke", "rgba(255,255,255,0.05)"); g.selectAll("text").style("fill", C.muted).style("font-size", "11px") })
@@ -64,49 +65,74 @@ function MultiLine({ data, symbols }: { data: any[]; symbols: string[] }) {
 }
 
 export default function FinancePage() {
-  const [data,    setData]    = useState<any[]>([])
-  const [summary, setSummary] = useState<any>(null)
-  const [symbol,  setSymbol]  = useState("")
-  const [loading, setLoading] = useState(true)
+  const [data,      setData]      = useState<any[]>([])
+  const [summary,   setSummary]   = useState<any>(null)
+  const [loading,   setLoading]   = useState(true)
+  const [symbol,    setSymbol]    = useState("")
+  const [startDate, setStartDate] = useState("")
+  const [endDate,   setEndDate]   = useState("")
+  const [limit,     setLimit]     = useState(200)
 
-  useEffect(() => { get("/api/finance/summary").then(setSummary).catch(console.error) }, [])
+  useEffect(() => {
+    get("/api/finance/summary").then(setSummary).catch(console.error)
+  }, [])
+
   useEffect(() => {
     setLoading(true)
-    const p = symbol ? `?symbol=${encodeURIComponent(symbol)}&limit=800` : "?limit=800"
-    get("/api/finance/prices" + p).then(d => { setData(d); setLoading(false) }).catch(console.error)
-  }, [symbol])
+    const p = new URLSearchParams()
+    p.set("limit", String(limit))
+    if (symbol)    p.set("symbol",     symbol)
+    if (startDate) p.set("start_date", startDate)
+    if (endDate)   p.set("end_date",   endDate)
+    get("/api/finance/prices?" + p.toString())
+      .then(d => { setData(d); setLoading(false) })
+      .catch(e => { console.error(e); setLoading(false) })
+  }, [symbol, startDate, endDate, limit])
 
   const symbols    = [...new Set(data.map((r: any) => r.symbol))].sort()
   const volBySymbol = d3.rollup(data, v => d3.sum(v, (d: any) => d.volume), (d: any) => d.symbol)
   const volChart   = Array.from(volBySymbol, ([key, value]) => ({ key, value: Math.round(value / 1e6) })).sort((a, b) => b.value - a.value)
   const candleData = data.filter((d: any) => d.symbol === (symbol || "AAPL"))
 
-  const filter = (
-    <select value={symbol} onChange={e => setSymbol(e.target.value)}
-      style={{ padding: "7px 12px", borderRadius: 8, border: `0.5px solid ${C.border}`, background: C.card, color: C.text, fontSize: 13 }}>
-      <option value="">All symbols</option>
-      {symbols.map(s => <option key={s} value={s}>{s}</option>)}
-    </select>
-  )
-
   return (
-    <PageShell title="Finance explorer" subtitle={`${summary?.symbols ?? "—"} stocks · 365 days`} action={filter}>
+    <PageShell
+      title="Finance explorer"
+      subtitle={`${summary?.symbols ?? "—"} stocks · ${data.length.toLocaleString()} records shown`}
+    >
+      <DataFilter
+        symbols={symbols}
+        selectedCat={symbol}
+        onCatChange={setSymbol}
+        startDate={startDate}
+        onStartDate={setStartDate}
+        endDate={endDate}
+        onEndDate={setEndDate}
+        limit={limit}
+        onLimit={setLimit}
+        catLabel="Symbol"
+      />
+
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 14, marginBottom: 28 }}>
-        <StatCard label="Records"      value={(summary?.total_records ?? 0).toLocaleString()} color={C.blue} />
-        <StatCard label="Symbols"      value={summary?.symbols ?? 0}                          color={C.purple} />
-        <StatCard label="Avg close"    value={`$${(summary?.avg_close ?? 0).toFixed(2)}`}     color={C.amber} />
+        <StatCard label="Showing"      value={data.length.toLocaleString()} color={C.blue} />
+        <StatCard label="Symbols"      value={summary?.symbols ?? 0}        color={C.purple} />
+        <StatCard label="Avg close"    value={`$${(summary?.avg_close ?? 0).toFixed(2)}`} color={C.amber} />
         <StatCard label="Total volume" value={((summary?.total_volume ?? 0) / 1e9).toFixed(1)} unit="B" color={C.teal} />
       </div>
 
-      {loading ? <div style={{ height: 300, background: C.card, borderRadius: 12, display: "flex", alignItems: "center", justifyContent: "center", color: C.muted }}>Loading...</div> : (
+      {loading ? (
+        <div style={{ height: 300, background: "#21253a", borderRadius: 12, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 10 }}>
+          <div style={{ width: 24, height: 24, border: "2px solid rgba(255,255,255,0.1)", borderTopColor: "#f5a623", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
+          <div style={{ fontSize: 13, color: "#7a7d94" }}>Loading data...</div>
+        </div>
+      ) : (
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-          <ChartCard title="All stocks — close price" subtitle="365 days" fullWidth>
+          <ChartCard title="All stocks — close price" subtitle="Select symbol to filter" fullWidth>
             <MultiLine data={data} symbols={symbols} />
           </ChartCard>
-          <ChartCard title={`${symbol || "AAPL"} — candlestick`} subtitle="Last 60 days · green = up, red = down">
+          <ChartCard title={`${symbol || "AAPL"} — candlestick`} subtitle="Last 60 entries · green up · red down">
             <CandlestickChart data={candleData} />
           </ChartCard>
-          <ChartCard title="Volume by symbol" subtitle="Total shares traded (millions)">
+          <ChartCard title="Volume by symbol" subtitle="Total shares (millions)">
             <BarChart entries={volChart} color={C.purple} multiColor yLabel="Volume (M)" />
           </ChartCard>
           <ChartCard title="Close price trend">
