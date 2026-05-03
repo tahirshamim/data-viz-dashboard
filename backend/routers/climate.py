@@ -9,9 +9,8 @@ import time
 
 router = APIRouter()
 
-# in-memory cache — no Redis needed
 _cache: dict = {}
-CACHE_TTL = 300  # 5 minutes
+CACHE_TTL = 300
 
 def cache_get(key: str):
     if key in _cache:
@@ -28,13 +27,14 @@ def cache_set(key: str, data):
 @router.get("/readings")
 async def get_climate_readings(
     country:    Optional[str] = Query(None),
+    station:    Optional[str] = Query(None),   # ← new city filter
     start_date: Optional[str] = Query(None),
     end_date:   Optional[str] = Query(None),
     limit:      int           = Query(200, le=5000),
     db:         AsyncSession  = Depends(get_db)
 ):
     try:
-        cache_key = f"readings:{country}:{start_date}:{end_date}:{limit}"
+        cache_key = f"readings:{country}:{station}:{start_date}:{end_date}:{limit}"
         cached = cache_get(cache_key)
         if cached:
             return cached
@@ -43,6 +43,8 @@ async def get_climate_readings(
 
         if country:
             stmt = stmt.where(ClimateReading.country == country)
+        if station:
+            stmt = stmt.where(ClimateReading.station == station)
         if start_date:
             stmt = stmt.where(ClimateReading.timestamp >= datetime.fromisoformat(start_date))
         if end_date:
@@ -51,7 +53,7 @@ async def get_climate_readings(
         stmt = stmt.order_by(ClimateReading.timestamp.desc()).limit(limit)
 
         result = await db.execute(stmt)
-        rows = result.scalars().all()
+        rows   = result.scalars().all()
 
         data = [
             {
@@ -75,6 +77,28 @@ async def get_climate_readings(
         return {"error": str(e), "type": type(e).__name__}
 
 
+@router.get("/stations")
+async def get_stations(db: AsyncSession = Depends(get_db)):
+    """Returns all unique stations grouped by country — used for city dropdown."""
+    try:
+        cached = cache_get("stations")
+        if cached:
+            return cached
+
+        stmt   = select(ClimateReading.station, ClimateReading.country).distinct()
+        result = await db.execute(stmt)
+        rows   = result.all()
+
+        data = [{"station": r.station, "country": r.country} for r in rows]
+        data.sort(key=lambda x: (x["country"], x["station"]))
+
+        cache_set("stations", data)
+        return data
+
+    except Exception as e:
+        return {"error": str(e)}
+
+
 @router.get("/summary")
 async def get_climate_summary(db: AsyncSession = Depends(get_db)):
     try:
@@ -89,7 +113,7 @@ async def get_climate_summary(db: AsyncSession = Depends(get_db)):
             func.avg(ClimateReading.humidity).label("avg_humidity"),
         )
         result = await db.execute(stmt)
-        row = result.one()
+        row    = result.one()
 
         data = {
             "total_records": row.total_records or 0,
@@ -102,15 +126,10 @@ async def get_climate_summary(db: AsyncSession = Depends(get_db)):
 
     except Exception as e:
         return {"error": str(e), "type": type(e).__name__}
-    
 
 
 @router.get("/trigger-fetch")
 async def trigger_climate_fetch(background_tasks: BackgroundTasks):
-    """
-    Returns immediately — runs fetch in background.
-    Cron job won't timeout.
-    """
     from tasks.ingestion import _fetch_climate
     background_tasks.add_task(_fetch_climate)
     return {"status": "ok", "message": "Climate fetch started in background"}
