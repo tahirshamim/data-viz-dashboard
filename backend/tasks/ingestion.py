@@ -6,7 +6,6 @@ from tasks.celery_app import celery_app
 from db.database import AsyncSessionLocal
 from models.data_model import ClimateReading, StockPrice
 
-# this will show in Render logs
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -40,51 +39,6 @@ STOCKS = [
 ]
 
 
-async def fetch_one_city(client: httpx.AsyncClient, city: dict):
-    try:
-        url = (
-            "https://api.open-meteo.com/v1/forecast"
-            f"?latitude={city['lat']}"
-            f"&longitude={city['lon']}"
-            "&daily=temperature_2m_max,temperature_2m_min,"
-            "temperature_2m_mean,relative_humidity_2m_mean"
-            "&timezone=UTC"
-            "&forecast_days=1"
-        )
-        resp = await client.get(url, timeout=15)
-        if resp.status_code != 200:
-            logger.error(f"  {city['name']}: HTTP {resp.status_code}")
-            return None
-
-        data      = resp.json()
-        daily     = data.get("daily", {})
-        temp_mean = daily.get("temperature_2m_mean",       [None])[0]
-        temp_max  = daily.get("temperature_2m_max",        [None])[0]
-        temp_min  = daily.get("temperature_2m_min",        [None])[0]
-        humidity  = daily.get("relative_humidity_2m_mean", [None])[0]
-
-        if temp_mean is None and temp_max and temp_min:
-            temp_mean = round((temp_max + temp_min) / 2, 1)
-
-        logger.info(f"  {city['name']}: {temp_mean}°C  {humidity}% humidity")
-
-        return ClimateReading(
-            station   = city["name"],
-            country   = city["country"],
-            latitude  = city["lat"],
-            longitude = city["lon"],
-            temp_c    = temp_mean,
-            humidity  = humidity,
-            co2_ppm   = None,
-            timestamp = datetime.utcnow().replace(
-                hour=0, minute=0, second=0, microsecond=0
-            ),
-        )
-    except Exception as e:
-        logger.error(f"  {city['name']} error: {e}")
-        return None
-
-
 @celery_app.task(bind=True, max_retries=3)
 def fetch_climate_data(self):
     try:
@@ -94,19 +48,80 @@ def fetch_climate_data(self):
 
 
 async def _fetch_climate():
+    """
+    Fetch all 20 cities in ONE request using Open-Meteo bulk API.
+    This avoids rate limiting completely.
+    """
     logger.info("=== Climate fetch started ===")
     try:
-        async with httpx.AsyncClient() as client:
-            tasks   = [fetch_one_city(client, city) for city in CITIES]
-            results = await asyncio.gather(*tasks, return_exceptions=True)
+        # build comma-separated lat/lon lists for bulk request
+        lats = ",".join(str(c["lat"]) for c in CITIES)
+        lons = ",".join(str(c["lon"]) for c in CITIES)
 
-        readings = [r for r in results if r is not None and not isinstance(r, Exception)]
-        logger.info(f"Fetched {len(readings)} cities successfully")
+        url = (
+            "https://api.open-meteo.com/v1/forecast"
+            f"?latitude={lats}"
+            f"&longitude={lons}"
+            "&daily=temperature_2m_max,temperature_2m_min,"
+            "temperature_2m_mean,relative_humidity_2m_mean"
+            "&timezone=UTC"
+            "&forecast_days=1"
+        )
+
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.get(url)
+
+        if resp.status_code == 429:
+            logger.error("Rate limited by Open-Meteo — will retry next hour")
+            return
+
+        if resp.status_code != 200:
+            logger.error(f"Open-Meteo error: HTTP {resp.status_code}")
+            return
+
+        # bulk response is a list when multiple locations requested
+        data = resp.json()
+
+        # if single city returns dict, wrap in list
+        if isinstance(data, dict):
+            data = [data]
+
+        readings = []
+        for i, city_data in enumerate(data):
+            if i >= len(CITIES):
+                break
+
+            city  = CITIES[i]
+            daily = city_data.get("daily", {})
+
+            temp_mean = daily.get("temperature_2m_mean",       [None])[0]
+            temp_max  = daily.get("temperature_2m_max",        [None])[0]
+            temp_min  = daily.get("temperature_2m_min",        [None])[0]
+            humidity  = daily.get("relative_humidity_2m_mean", [None])[0]
+
+            if temp_mean is None and temp_max and temp_min:
+                temp_mean = round((temp_max + temp_min) / 2, 1)
+
+            logger.info(f"  {city['name']}: {temp_mean}°C  {humidity}% humidity")
+
+            readings.append(ClimateReading(
+                station   = city["name"],
+                country   = city["country"],
+                latitude  = city["lat"],
+                longitude = city["lon"],
+                temp_c    = temp_mean,
+                humidity  = humidity,
+                co2_ppm   = None,
+                timestamp = datetime.utcnow().replace(
+                    hour=0, minute=0, second=0, microsecond=0
+                ),
+            ))
 
         async with AsyncSessionLocal() as db:
             db.add_all(readings)
             await db.commit()
-            logger.info(f"=== Saved {len(readings)} climate readings to database ===")
+
+        logger.info(f"=== Saved {len(readings)} climate readings ===")
 
     except Exception as e:
         logger.error(f"=== Climate fetch FAILED: {e} ===")
@@ -120,7 +135,7 @@ async def fetch_one_stock(symbol: str):
         hist   = ticker.history(period="2d", interval="1d")
 
         if hist.empty:
-            logger.warning(f"  {symbol}: no data returned")
+            logger.warning(f"  {symbol}: no data")
             return None
 
         latest = hist.iloc[-1]
@@ -160,7 +175,8 @@ async def _fetch_stocks():
         async with AsyncSessionLocal() as db:
             db.add_all(records)
             await db.commit()
-            logger.info(f"=== Saved {len(records)} stock records to database ===")
+
+        logger.info(f"=== Saved {len(records)} stock records ===")
 
     except Exception as e:
         logger.error(f"=== Stock fetch FAILED: {e} ===")

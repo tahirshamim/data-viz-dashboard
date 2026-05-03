@@ -12,10 +12,12 @@ celery_app = Celery(
 )
 
 celery_app.conf.beat_schedule = {
-    "fetch-climate-hourly": {
+    # climate every 6 hours — one bulk request for all 20 cities
+    "fetch-climate-6hourly": {
         "task":     "tasks.ingestion.fetch_climate_data",
-        "schedule": crontab(minute=0),
+        "schedule": crontab(minute=0, hour="*/6"),
     },
+    # stocks once daily after US market close
     "fetch-stocks-daily": {
         "task":     "tasks.ingestion.fetch_stock_data",
         "schedule": crontab(hour=20, minute=0),
