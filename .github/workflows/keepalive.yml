@@ -10,4 +10,4 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Ping Render
-        run: curl --max-time 30 https://dataviz-backend-jnty.onrender.com/health
+        run: curl --max-time 60 https://dataviz-backend-jnty.onrender.com/health
