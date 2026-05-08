@@ -2,7 +2,8 @@ name: Fetch Finance
 
 on:
   schedule:
-    - cron: '0 6 * * *'  # daily at 6am UTC
+    - cron: '0 6 * * *'
+  workflow_dispatch:        # ← adds manual trigger button
 
 jobs:
   fetch:
