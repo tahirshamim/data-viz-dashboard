@@ -177,7 +177,7 @@ function MinMaxCard({ data, days, label }: {
 
   const maxClose = filtered.length ? +(d3.max(filtered, (d: any) => +d.close) ?? 0).toFixed(2) : null
   const minClose = filtered.length ? +(d3.min(filtered, (d: any) => +d.close) ?? 0).toFixed(2) : null
-  const maxVol   = filtered.length ? d3.max(filtered, (d: any) => +d.volume) ?? 0 : null
+  // const maxVol   = filtered.length ? d3.max(filtered, (d: any) => +d.volume) ?? 0 : null
   const avgVol   = filtered.length ? +(d3.mean(filtered, (d: any) => +d.volume) ?? 0 / 1e6).toFixed(1) : null
 
   return (
