@@ -1,0 +1,12 @@
+name: Fetch Climate
+
+on:
+  schedule:
+    - cron: '0 * * * *'  # every hour
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Climate Fetch
+        run: curl --max-time 60 https://dataviz-backend-jnty.onrender.com/api/climate/trigger-fetch

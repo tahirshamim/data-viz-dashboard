@@ -1,0 +1,12 @@
+name: Fetch Finance
+
+on:
+  schedule:
+    - cron: '0 6 * * *'  # daily at 6am UTC
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Finance Fetch
+        run: curl --max-time 60 https://dataviz-backend-jnty.onrender.com/api/finance/trigger-fetch
