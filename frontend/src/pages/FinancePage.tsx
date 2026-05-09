@@ -334,10 +334,19 @@ export default function FinancePage() {
   useEffect(() => {
     setLoading(true)
     const p = new URLSearchParams()
-    p.set("limit", String(limit))
+    p.set("limit", "5000")  // high enough for all symbols × 90 days
+
     if (symbol)    p.set("symbol",     symbol)
     if (startDate) p.set("start_date", startDate)
     if (endDate)   p.set("end_date",   endDate)
+
+    // if no date filter set — automatically fetch last 90 days
+    if (!startDate && !endDate) {
+      const ninetyDaysAgo = new Date()
+      ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90)
+      p.set("start_date", ninetyDaysAgo.toISOString().slice(0, 10))
+    }
+
     get("/api/finance/prices?" + p.toString())
       .then(d => { setData(d); setLoading(false) })
       .catch(e => { console.error(e); setLoading(false) })

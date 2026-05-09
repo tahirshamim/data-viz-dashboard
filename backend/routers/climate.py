@@ -30,7 +30,7 @@ async def get_climate_readings(
     station:    Optional[str] = Query(None),   # ← new city filter
     start_date: Optional[str] = Query(None),
     end_date:   Optional[str] = Query(None),
-    limit:      int           = Query(200, le=5000),
+    limit:      int           = Query(2000, le=10000),
     db:         AsyncSession  = Depends(get_db)
 ):
     try:

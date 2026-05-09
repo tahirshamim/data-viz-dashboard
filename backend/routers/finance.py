@@ -13,7 +13,7 @@ async def get_stock_prices(
     symbol:     Optional[str] = Query(None),
     start_date: Optional[str] = Query(None),
     end_date:   Optional[str] = Query(None),
-    limit:      int           = Query(1000, le=10000),
+    limit:      int           = Query(2000, le=10000),
     db:         AsyncSession  = Depends(get_db)
 ):
     filters = []

@@ -214,11 +214,20 @@ export default function ClimatePage() {
   useEffect(() => {
     setLoading(true)
     const p = new URLSearchParams()
-    p.set("limit", String(limit))
+    p.set("limit", "3000")
+
     if (country)   p.set("country",    country)
     if (station)   p.set("station",    station)
     if (startDate) p.set("start_date", startDate)
     if (endDate)   p.set("end_date",   endDate)
+
+    // auto fetch last 30 days if no date filter
+    if (!startDate && !endDate) {
+      const thirtyDaysAgo = new Date()
+      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
+      p.set("start_date", thirtyDaysAgo.toISOString().slice(0, 10))
+    }
+
     get("/api/climate/readings?" + p.toString())
       .then(d => { setData(d); setLoading(false) })
       .catch(e => { console.error(e); setLoading(false) })
