@@ -171,37 +171,53 @@ function AvgPriceCard({ label, avg, color, trend, change }: {
 function MinMaxCard({ data, days, label }: {
   data: any[]; days: number; label: string
 }) {
-  const cutoff = new Date()
+  if (!data.length) return null
+
+  const maxDate = new Date(d3.max(data, d => new Date(d.timestamp).getTime())!)
+  const cutoff  = new Date(maxDate)
   cutoff.setDate(cutoff.getDate() - days)
   const filtered = data.filter(d => new Date(d.timestamp) >= cutoff)
 
   const maxClose = filtered.length ? +(d3.max(filtered, (d: any) => +d.close) ?? 0).toFixed(2) : null
   const minClose = filtered.length ? +(d3.min(filtered, (d: any) => +d.close) ?? 0).toFixed(2) : null
-  // const maxVol   = filtered.length ? d3.max(filtered, (d: any) => +d.volume) ?? 0 : null
-  const avgVol   = filtered.length ? +(d3.mean(filtered, (d: any) => +d.volume) ?? 0 / 1e6).toFixed(1) : null
+  const avgVolRaw = filtered.length ? d3.mean(filtered, (d: any) => +d.volume) ?? 0 : 0
+
+  // format volume nicely
+  const fmtVol = (v: number) => {
+    if (v >= 1e9) return `${(v / 1e9).toFixed(1)}B`
+    if (v >= 1e6) return `${(v / 1e6).toFixed(1)}M`
+    if (v >= 1e3) return `${(v / 1e3).toFixed(0)}K`
+    return String(Math.round(v))
+  }
 
   return (
     <div style={{
       background: C.card, borderRadius: 12, padding: "16px 18px",
       border: `0.5px solid ${C.border}`
     }}>
-      <div style={{ fontSize: 11, color: C.muted, textTransform: "uppercase" as const, letterSpacing: "0.07em", marginBottom: 10 }}>
-        {label} — Price range
+      <div style={{
+        fontSize: 11, color: C.muted,
+        textTransform: "uppercase" as const,
+        letterSpacing: "0.07em", marginBottom: 10
+      }}>
+        {label} — Range
       </div>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-        <div>
-          <div style={{ fontSize: 10, color: C.dim, marginBottom: 3 }}>Close</div>
-          <div style={{ fontSize: 14, fontWeight: 500 }}>
-            <span style={{ color: C.coral }}>${minClose ?? "—"}</span>
-            <span style={{ color: C.muted, margin: "0 4px" }}>/</span>
-            <span style={{ color: C.teal }}>${maxClose ?? "—"}</span>
-          </div>
+
+      {/* close price row */}
+      <div style={{ marginBottom: 8 }}>
+        <div style={{ fontSize: 10, color: C.dim, marginBottom: 3 }}>Close (low / high)</div>
+        <div style={{ fontSize: 13, fontWeight: 500 }}>
+          <span style={{ color: C.coral }}>${minClose ?? "—"}</span>
+          <span style={{ color: C.muted, margin: "0 4px" }}>/</span>
+          <span style={{ color: C.teal }}>${maxClose ?? "—"}</span>
         </div>
-        <div>
-          <div style={{ fontSize: 10, color: C.dim, marginBottom: 3 }}>Avg volume</div>
-          <div style={{ fontSize: 14, fontWeight: 500, color: C.purple }}>
-            {avgVol ? `${(+avgVol * 1e6 / 1e6).toFixed(1)}M` : "—"}
-          </div>
+      </div>
+
+      {/* volume row */}
+      <div>
+        <div style={{ fontSize: 10, color: C.dim, marginBottom: 3 }}>Avg volume</div>
+        <div style={{ fontSize: 13, fontWeight: 500, color: C.purple }}>
+          {avgVolRaw ? fmtVol(avgVolRaw) : "—"}
         </div>
       </div>
     </div>
@@ -465,7 +481,7 @@ export default function FinancePage() {
           {/* ── average cards ── */}
           <div style={{
             display: "grid",
-            gridTemplateColumns: "repeat(auto-fill, minmax(180px,1fr))",
+            gridTemplateColumns: "repeat(3, 1fr)",
             gap: 14, marginBottom: 24
           }}>
             <AvgPriceCard
